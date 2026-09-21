@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>动画播放器 · 张兴刚工作室</title>
+<style>
+:root { --bar:#1e293b; --stage:#0b1220; --accent:#2563eb; --text:#e2e8f0; --muted:#94a3b8; }
+* { margin:0; padding:0; box-sizing:border-box; }
+html, body { height:100%; }
+body {
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  background:var(--stage); color:var(--text); display:flex; flex-direction:column; overflow:hidden;
+}
+
+/* ---------- 顶栏 ---------- */
+header {
+  background:var(--bar); padding:10px 16px; display:flex; align-items:center; gap:12px;
+  flex-shrink:0; box-shadow:0 2px 10px rgba(0,0,0,.35); z-index:10;
+}
+.back {
+  display:inline-flex; align-items:center; gap:6px; padding:6px 13px; border-radius:7px;
+  background:#334155; color:#e2e8f0; text-decoration:none; font-size:.83rem;
+  border:1px solid #475569; transition:all .15s; white-space:nowrap;
+}
+.back:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
+.meta { flex:1; min-width:0; }
+.meta .t {
+  font-size:.95rem; font-weight:600; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis; color:#f1f5f9;
+}
+.meta .s { font-size:.72rem; color:var(--muted); margin-top:1px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis; }
+.tools { display:flex; gap:8px; flex-shrink:0; }
+.btn {
+  padding:6px 13px; border-radius:7px; background:#334155; color:#e2e8f0;
+  border:1px solid #475569; font-size:.83rem; cursor:pointer; font-family:inherit;
+  transition:all .15s; white-space:nowrap;
+}
+.btn:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+
+/* ---------- 舞台 ---------- */
+#stage {
+  flex:1; display:flex; align-items:center; justify-content:center;
+  background:var(--stage); position:relative; overflow:hidden; padding:10px;
+}
+#player-host { width:100%; height:100%; display:flex; align-items:center; justify-content:center; }
+#player-host ruffle-player, #player-host ruffle-embed {
+  width:100%; height:100%; max-width:100%; max-height:100%;
+}
+
+/* ---------- 状态层 ---------- */
+.state {
+  position:absolute; inset:0; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:14px; text-align:center;
+  padding:32px; z-index:5; background:var(--stage);
+}
+.state.hidden { display:none; }
+.spinner {
+  width:38px; height:38px; border:3px solid #334155; border-top-color:var(--accent);
+  border-radius:50%; animation:spin .8s linear infinite;
+}
+@keyframes spin { to { transform:rotate(360deg); } }
+.state .msg { font-size:.9rem; color:var(--muted); max-width:560px; line-height:1.7; }
+.state .title { font-size:1.05rem; color:#f1f5f9; font-weight:600; }
+.state code {
+  background:#1e293b; padding:2px 7px; border-radius:4px; font-size:.82rem;
+  color:#93c5fd; word-break:break-all;
+}
+.state .actions { display:flex; gap:10px; margin-top:6px; flex-wrap:wrap; justify-content:center; }
+
+/* ---------- 页脚提示 ---------- */
+footer {
+  background:var(--bar); padding:6px 16px; font-size:.7rem; color:var(--muted);
+  text-align:center; flex-shrink:0; white-space:nowrap; overflow:hidden;
+  text-overflow:ellipsis;
+}
+</style>
+</head>
+<body>
+
+<header>
+  <a class="back" href="index.html">&larr; 返回目录</a>
+  <div class="meta">
+    <div class="t" id="fname">加载中…</div>
+    <div class="s" id="fpath"></div>
+  </div>
+  <div class="tools">
+    <button class="btn" id="btnReload" title="重新加载">重载</button>
+    <button class="btn" id="btnFull" title="全屏显示">全屏</button>
+  </div>
+</header>
+
+<div id="stage">
+  <div id="player-host"></div>
+
+  <!-- 加载中 -->
+  <div class="state" id="stLoad">
+    <div class="spinner"></div>
+    <div class="msg">正在加载 Ruffle 播放引擎…</div>
+  </div>
+
+  <!-- 错误 -->
+  <div class="state hidden" id="stErr">
+    <div class="title">无法播放这个动画</div>
+    <div class="msg" id="errMsg"></div>
+    <div class="actions">
+      <a class="btn" href="index.html">&larr; 返回目录</a>
+      <button class="btn" id="btnRetry">重试</button>
+    </div>
+  </div>
+</div>
+
+<footer>张兴刚工作室 · 由 Ruffle 开源 Flash 模拟器驱动 · 无需安装插件</footer>
+
+<script>
+/* ============================================================
+   1. 解析 URL 参数
+   ============================================================ */
+var params = new URLSearchParams(location.search);
+var swfPath = params.get('f') || '';
+var swfName = swfPath ? swfPath.split('/').pop() : '';
+
+document.title = (swfName ? swfName.replace(/\.swf$/i, '') + ' · ' : '') + '动画播放器';
+document.getElementById('fname').textContent =
+  swfName ? swfName.replace(/\.swf$/i, '') : '未指定动画';
+document.getElementById('fpath').textContent = swfPath || '(缺少 f 参数)';
+
+var stLoad = document.getElementById('stLoad');
+var stErr  = document.getElementById('stErr');
+
+function showError(msg) {
+  stLoad.classList.add('hidden');
+  stErr.classList.remove('hidden');
+  document.getElementById('errMsg').innerHTML = msg;
+}
+
+/* ============================================================
+   2. 参数缺失直接报错
+   ============================================================ */
+if (!swfPath) {
+  showError('没有指定要播放的动画。<br>请从<a href="index.html" style="color:#60a5fa">目录页</a>点击卡片进入。');
+} else if (!/\.swf$/i.test(swfPath)) {
+  showError('参数不是有效的 SWF 文件：<code>' + swfPath + '</code>');
+}
+
+/* ============================================================
+   3. 配置 Ruffle
+   ============================================================ */
+window.RufflePlayer = window.RufflePlayer || {};
+window.RufflePlayer.config = {
+  publicPath: 'ruffle/',              // ruffle.js 与 .wasm 所在目录
+  polyfills: true,
+  autoplay: 'on',
+  unmuteOverlay: 'hidden',
+  letterbox: 'on',
+  scale: 'showAll',
+  quality: 'high',
+  warnOnUnsupportedContent: false,
+  showSwfDownload: false,
+  logLevel: 'error',
+  allowScriptAccess: false,           // 教学动画不需要跨脚本访问，更安全
+  openUrlMode: 'allow',
+  favorFlash: false
+};
+
+/* ============================================================
+   4. 启动播放
+   ============================================================ */
+var started = false;
+
+function startPlayer() {
+  if (started || !swfPath || !/\.swf$/i.test(swfPath)) return;
+
+  var Ruffle = window.RufflePlayer;
+  if (!Ruffle || typeof Ruffle.newest !== 'function') {
+    showError('Ruffle 播放引擎没有加载成功。<br>请检查 <code>ruffle/ruffle.js</code> 是否存在，然后刷新页面。');
+    return;
+  }
+
+  var ruffle;
+  try {
+    ruffle = Ruffle.newest();
+  } catch (e) {
+    showError('初始化播放引擎失败：<code>' + e.message + '</code>');
+    return;
+  }
+  if (!ruffle) {
+    showError('找不到可用的 Ruffle 播放器实例。');
+    return;
+  }
+
+  var host = document.getElementById('player-host');
+
+  var player;
+  try {
+    player = ruffle.createPlayer();
+  } catch (e) {
+    showError('创建播放器失败：<code>' + e.message + '</code>');
+    return;
+  }
+
+  player.id = 'ruffle-player';
+  player.style.width = '100%';
+  player.style.height = '100%';
+  host.appendChild(player);
+
+  started = true;
+
+  try {
+    player.ruffle().load(swfPath);
+  } catch (e) {
+    showError('加载动画失败：<code>' + e.message + '</code>');
+    return;
+  }
+
+  // 加载完成 / 失败的事件（Ruffle 提供 loadedmetadata 等自定义事件）
+  player.addEventListener('loadedmetadata', function () {
+    stLoad.classList.add('hidden');
+  });
+  player.addEventListener('loadeddata', function () {
+    stLoad.classList.add('hidden');
+  });
+
+  // 兜底：3 秒后仍未收到事件就隐藏加载层（画面通常已经出来了）
+  setTimeout(function () {
+    if (!started) return;
+    stLoad.classList.add('hidden');
+  }, 3000);
+
+  // 再兜底：12 秒后如果连播放器容器都是空的，给出错误
+  setTimeout(function () {
+    var host = document.getElementById('player-host');
+    if (!host.querySelector('ruffle-player, ruffle-embed, ruffle-object, canvas')) {
+      showError(
+        '动画没有成功加载。<br>可能原因：文件不存在，或该动画依赖 Flash 的高级特性。' +
+        '<br>文件路径：<code>' + swfPath + '</code>' +
+        '<br><br>你可以在本地用原始播放器打开这个文件。'
+      );
+    }
+  }, 12000);
+}
+
+/* 等 Ruffle 脚本执行完再启动 */
+if (swfPath && /\.swf$/i.test(swfPath)) {
+  if (document.readyState === 'complete') {
+    startPlayer();
+  } else {
+    window.addEventListener('load', startPlayer);
+  }
+}
+
+/* ============================================================
+   5. 交互
+   ============================================================ */
+document.getElementById('btnReload').addEventListener('click', function () {
+  location.reload();
+});
+document.getElementById('btnRetry').addEventListener('click', function () {
+  location.reload();
+});
+document.getElementById('btnFull').addEventListener('click', function () {
+  var el = document.getElementById('stage');
+  if (!document.fullscreenElement) {
+    (el.requestFullscreen || el.webkitRequestFullscreen || function(){}).call(el);
+  } else {
+    (document.exitFullscreen || document.webkitExitFullscreen || function(){}).call(document);
+  }
+});
+
+/* 键盘：Backspace 返回目录，F 全屏，R 重载 */
+document.addEventListener('keydown', function (e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.key === 'Backspace') { e.preventDefault(); location.href = 'index.html'; }
+  if (e.key === 'f' || e.key === 'F') { document.getElementById('btnFull').click(); }
+  if (e.key === 'r' || e.key === 'R') { location.reload(); }
+});
+</script>
+
+<!-- Ruffle 播放引擎（自托管，必须在业务脚本之后引入以触发 load） -->
+<script src="ruffle/ruffle.js"></script>
+
+</body>
+</html>
