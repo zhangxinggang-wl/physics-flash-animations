@@ -72,10 +72,10 @@ header {
 
 /* ---------- 页脚提示 ---------- */
 footer {
-  background:var(--bar); padding:6px 16px; font-size:.7rem; color:var(--muted);
-  text-align:center; flex-shrink:0; white-space:nowrap; overflow:hidden;
-  text-overflow:ellipsis;
+  background:var(--bar); padding:8px 16px; font-size:.7rem; color:var(--muted);
+  text-align:center; flex-shrink:0; line-height:1.6;
 }
+footer .copyright { margin-top:4px; }
 </style>
 </head>
 <body>
@@ -112,7 +112,10 @@ footer {
   </div>
 </div>
 
-<footer>张兴刚工作室 · 由 Ruffle 开源 Flash 模拟器驱动 · 无需安装插件</footer>
+<footer>
+  <div>张兴刚工作室 · 由 Ruffle 开源 Flash 模拟器驱动 · 无需安装插件</div>
+  <div class="copyright">本站动画来自公开网络的教学资源，仅供物理教学与学习参考使用。Ruffle 采用 MIT / Apache-2.0 双协议开源。<br>如涉及版权问题，请联系删除。</div>
+</footer>
 
 <script>
 /* ============================================================
